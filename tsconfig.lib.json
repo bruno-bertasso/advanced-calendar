@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+    "outDir": "dist-lib/types",
+    "rootDir": "src",
+    "types": []
+  },
+  "include": ["src/components/calendar", "src/components/ui", "src/lib", "src/vite-env.d.ts"],
+  "exclude": ["src/**/__tests__", "src/**/*.test.*"]
+}

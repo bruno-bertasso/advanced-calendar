@@ -32,6 +32,7 @@ export function buildEventChange(
     occurrence,
     start,
     end,
+    scope: 'all',
     nextEvent: applyOccurrenceChange(event, occurrence, start, end, resourceIds),
   };
 }
@@ -50,12 +51,20 @@ export type OptimisticAction =
 export function optimisticReducer(state: OptimisticState, action: OptimisticAction): OptimisticState {
   const pendingIds = new Set(state.pendingIds);
   switch (action.kind) {
-    case 'change':
-      pendingIds.add(action.change.event.id);
-      return {
-        events: state.events.map((e) => (e.id === action.change.event.id ? action.change.nextEvent : e)),
-        pendingIds,
-      };
+    case 'change': {
+      const { change } = action;
+      pendingIds.add(change.event.id);
+      const created = change.created ?? [];
+      for (const c of created) pendingIds.add(c.id);
+      const isFullDelete = change.type === 'delete' && change.scope === 'all';
+      // Idempotent: React re-applies optimistic actions on top of a new base while the
+      // transition is pending, and the base may already contain the created events.
+      const createdIds = new Set(created.map((c) => c.id));
+      const events = state.events.flatMap((e) =>
+        createdIds.has(e.id) ? [] : e.id !== change.event.id ? [e] : isFullDelete ? [] : [change.nextEvent],
+      );
+      return { events: [...events, ...created], pendingIds };
+    }
     case 'create':
       pendingIds.add(action.event.id);
       return { events: [...state.events.filter((e) => e.id !== action.event.id), action.event], pendingIds };

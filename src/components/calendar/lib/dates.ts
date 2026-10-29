@@ -151,8 +151,9 @@ export function formatTimeRange(
   timeZone: string,
   locale?: string,
   allDay?: boolean,
+  allDayLabel = 'All day',
 ): string {
-  if (allDay) return 'All day';
+  if (allDay) return allDayLabel;
   const fmt = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone });
   return fmt.formatRange(start, end);
 }

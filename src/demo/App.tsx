@@ -1,13 +1,27 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Calendar,
   CalendarBody,
   CalendarHeader,
+  ptBRMessages,
   useCalendarQueryState,
+  type BeforeEventChange,
   type CalendarEvent,
   type EventChange,
 } from '@/components/calendar';
-import { createSampleEvents, resources } from './sample-data';
+import { createBlockedRanges, createSampleEvents, resources } from './sample-data';
+
+const BUSINESS_HOURS = { startHour: 8, endHour: 18 };
+
+/** Example validation: nothing may start before 6:00 or end after 22:00 (display zone). */
+const validate: BeforeEventChange = (change) => {
+  if (change.type === 'delete' || change.event.allDay) return true;
+  const h = (d: Date) => d.getHours() + d.getMinutes() / 60;
+  if (h(change.start) < 6 || (h(change.end) > 22 && change.end.getDate() === change.start.getDate())) {
+    return 'outside allowed hours (6:00–22:00)';
+  }
+  return true;
+};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -15,6 +29,8 @@ export function App() {
   const [events, setEvents] = useState<CalendarEvent[]>(() => createSampleEvents());
   const [failSaves, setFailSaves] = useState(false);
   const [rtl, setRtl] = useState(false);
+  const [lang, setLang] = useState<'en' | 'pt-BR'>('en');
+  const blockedRanges = useMemo(() => createBlockedRanges(), []);
   const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
   const q = useCalendarQueryState({ defaultView: 'week', timeZone });
 
@@ -22,7 +38,13 @@ export function App() {
   const handleEventChange = async (change: EventChange) => {
     await sleep(600);
     if (failSaves) throw new Error('Server rejected change');
-    setEvents((prev) => prev.map((e) => (e.id === change.event.id ? change.nextEvent : e)));
+    // Persist exactly what the change describes: the updated (or deleted) series plus any
+    // events it creates (exception for "this event", new series for "this and following").
+    setEvents((prev) => {
+      const removed = change.type === 'delete' && change.scope === 'all';
+      const updated = prev.flatMap((e) => (e.id !== change.event.id ? [e] : removed ? [] : [change.nextEvent]));
+      return [...updated, ...(change.created ?? [])];
+    });
   };
 
   const handleCreate = async (event: CalendarEvent) => {
@@ -58,6 +80,10 @@ export function App() {
           Simulate save failures
         </label>
         <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={lang === 'pt-BR'} onChange={(e) => setLang(e.target.checked ? 'pt-BR' : 'en')} />
+          Português
+        </label>
+        <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={rtl} onChange={(e) => setRtl(e.target.checked)} />
           RTL
         </label>
@@ -84,6 +110,11 @@ export function App() {
         onDateChange={q.setDate}
         views={['day', 'week', 'work-week', 'month', 'year', 'agenda', 'timeline']}
         direction={rtl ? 'rtl' : 'ltr'}
+        locale={lang}
+        messages={lang === 'pt-BR' ? ptBRMessages : undefined}
+        businessHours={BUSINESS_HOURS}
+        blockedRanges={blockedRanges}
+        onBeforeEventChange={validate}
         onEventCreate={handleCreate}
         onEventDelete={handleDelete}
         timeZone={timeZone}

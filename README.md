@@ -5,7 +5,8 @@ A calendar component built in parts (`Calendar`, `CalendarHeader`, `CalendarBody
 ```bash
 npm install
 npm run dev        # demo at http://localhost:5173  (?view=week&date=2026-10-28&resources=ada,grace)
-npm test           # 58 tests (vitest + Testing Library)
+npm test           # 84 tests (vitest + Testing Library)
+npm run build:lib  # library build → dist-lib/ (ESM, code-split views, .d.ts)
 npm run typecheck
 npm run build
 ```
@@ -102,10 +103,58 @@ You can also leave the calendar uncontrolled (`defaultView`, `defaultDate`).
 - **Resizing in month view and the all-day lane.** A handle on the inline-end edge moves the last day of the event onto the hovered day. All-day events never shrink below one day.
 - **RTL (`direction="rtl"`).** Sets `dir` and Base UI's `DirectionProvider`. Layout uses logical properties (`start`/`end`, `inset-inline-start`), horizontal arrow keys are mirrored in every grid, and timeline drag deltas are inverted. Portaled popups (popover, dialog, menu) inherit the direction.
 
+## Recurring edits, validation and availability
+
+- **Edit scope for recurring events.** Moving, resizing, editing or deleting an occurrence asks *This event / This and following events / All events* (a Base UI AlertDialog). Set `recurringEditScope` to skip the question.
+  - `this`: adds an EXDATE to the series and puts a standalone exception event (with `recurringEventId` and `originalStart`) in `change.created`.
+  - `following`: ends the series with `UNTIL` and puts a new series in `change.created`. A COUNT limit is split so the total stays the same.
+  - `all`: shifts the whole series, and its EXDATEs move with it so excluded dates stay excluded.
+  - For persistence, save `change.nextEvent` plus every event in `change.created`. A delete with scope `all` calls `onEventDelete`; any other delete scope comes through `onEventChange` with `type: 'delete'`.
+- **`onBeforeEventChange(change)`** can return `false`, a reason string, or a Promise of either. If it rejects the change, nothing is applied and the reason is read out through the urgent (assertive) live region.
+- **`blockedRanges`** (global, or per resource with a `label`) show as hatched areas in the week grid, timeline and month cells. Moves, resizes, drag-to-create and the create dialog all refuse blocked time.
+- **`businessHours`** shades time outside working hours in the week grid and the timeline.
+
+## Interaction
+
+- **Drag to create.** In the week view, press on an empty slot and drag vertically; in the timeline, drag horizontally. Releasing opens the create dialog (or calls `onSlotSelect`) with that time range. A plain click does nothing; double-click or Enter still create a single-slot event.
+- **Live drop preview.** While dragging or resizing, with the mouse or the keyboard, a dashed copy of the event shows exactly where it will land, snapped to slots and across days, resources and timeline rows. The original stays in place, dimmed. Month view gets a live resize preview this way too.
+- **Overlapping events.** With 3 or more side by side, events overlap in a cascade (each wider than its share, later ones stacked on top) instead of shrinking into unreadable slivers.
+
+## Internationalisation
+
+Pass `messages` with any subset of strings; nested groups are merged one level deep. A complete Brazilian Portuguese preset is included:
+
+```tsx
+import { ptBRMessages } from '@/components/calendar';
+<Calendar locale="pt-BR" messages={ptBRMessages} … />
+<Calendar messages={{ today: 'Now', views: { week: 'Wk' } }} … />
+```
+
+Dates and times always use `Intl` with `locale`. Pass a stable object (a module constant or a memoised value) so the calendar doesn't re-render more than needed.
+
+## Performance
+
+- **Split context.** Configuration and stable callbacks live in `useCalendarConfig()`; navigation, data and selection live in `useCalendarState()`. Time-grid slot cells are memoised and only read config.
+- **dnd-kit isolation.** dnd-kit re-renders every droppable whenever `DndContext` renders, so it sits in a memoised shell with stable sensor options and handlers.
+- **Stable defaults.** Default props such as `resources = []` are now module-level constants, so they don't break memoisation.
+- **Measured** (week view, 336 slot cells):
+
+  | Action | Slot cells re-rendered before | After |
+  | --- | --- | --- |
+  | Open the event popover | 336 | 0 |
+  | Optimistic move | 336 | 2 |
+
+- **Recurrence cache.** Expansions are cached per event object (WeakMap). An optimistic edit re-expands only the event that changed.
+- **Code splitting.** Year, Agenda, Timeline and the editor dialog are `React.lazy` chunks, shown with a skeleton while loading. The demo build also splits vendor chunks (react, base-ui, dnd, dates). The largest chunk went from 610 kB to 219 kB, and the size warning is gone.
+
+## Distribution
+
+- **npm package.** `npm run build:lib` writes `dist-lib/`: an ESM bundle with dependencies left external, the views still code-split, and `.d.ts` files. `package.json` defines `exports`, `types`, `files`, `sideEffects` and React 19 as a peer dependency.
+- **shadcn registry.** `registry.json` describes the component as a `registry:block`, with its files, dependencies and CSS variables. Build it with `npx shadcn build` and install it with `npx shadcn add <url>`.
+
 ## Known limitations
 
-- Editing a recurring event always applies to the whole series. There is no "this occurrence only" option yet (that would mean adding EXDATEs and a separate exception event). `EventChange.occurrence` is there so consumers can build it.
-- The resize preview is live in the time grid and the timeline. In month view, only the hovered target cell is highlighted.
 - In the timeline, the context menu's "New event here" doesn't work for an exact time position. Double-click or Enter on the focused column instead.
-- If you switch `direction` at runtime, the header Tabs indicator only repositions on the next resize or tab change.
+- Drag-to-create is pointer-only (mouse or pen). On touch screens, dragging scrolls instead; use double-tap or the keyboard.
+- Editing a series' exception later doesn't re-link it to the series. It is an ordinary event that carries `recurringEventId`.
 - jsdom prints harmless `act()` warnings from Base UI ScrollArea's internal timers during tests.

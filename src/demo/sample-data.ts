@@ -1,5 +1,5 @@
 import { addDays, addHours, setHours, setMinutes, startOfDay, startOfWeek } from 'date-fns';
-import type { CalendarEvent, CalendarResource } from '@/components/calendar';
+import type { BlockedRange, CalendarEvent, CalendarResource } from '@/components/calendar';
 
 export const resources: CalendarResource[] = [
   { id: 'ada', title: 'Ada Lovelace', color: 'oklch(0.6 0.18 260)' },
@@ -85,5 +85,19 @@ export function createSampleEvents(today = new Date()): CalendarEvent[] {
       end: at(d(10), 9 + i, 45),
       resourceIds: ['grace'],
     })),
+  ];
+}
+
+/** Room A is closed for cleaning 12:00–13:00 every weekday; Saturday afternoon is a global freeze. */
+export function createBlockedRanges(today = new Date()): BlockedRange[] {
+  const week = startOfWeek(startOfDay(today), { weekStartsOn: 1 });
+  return [
+    ...Array.from({ length: 5 }, (_, i) => ({
+      start: at(addDays(week, i), 12),
+      end: at(addDays(week, i), 13),
+      resourceId: 'room-a',
+      label: 'Cleaning',
+    })),
+    { start: at(addDays(week, 5), 13), end: at(addDays(week, 5), 18), label: 'Change freeze' },
   ];
 }

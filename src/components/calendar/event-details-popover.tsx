@@ -18,7 +18,7 @@ interface EventDetailsPopoverProps {
 
 /** Single shared, controlled popover anchored to whichever event card was activated. */
 export function EventDetailsPopover({ occurrence, anchor, onClose, returnFocusRef }: EventDetailsPopoverProps) {
-  const { direction, timeZone, locale, resources, canEdit, canDelete, canCreate, nudge, openEditor, deleteEvent, duplicateEvent } = useCalendar();
+  const { messages, direction, timeZone, locale, resources, canEdit, canDelete, canCreate, nudge, openEditor, deleteEvent, duplicateEvent } = useCalendar();
   const editable = occurrence ? canEdit(occurrence) : false;
   const open = Boolean(occurrence && anchor);
   const resourceNames = occurrence?.resourceIds
@@ -45,7 +45,7 @@ export function EventDetailsPopover({ occurrence, anchor, onClose, returnFocusRe
                   />
                   <Popover.Title className="flex-1 text-base font-semibold leading-snug">{occurrence.title}</Popover.Title>
                   <Popover.Close
-                    aria-label="Close"
+                    aria-label={messages.close}
                     className="-mr-1 -mt-1 rounded-md p-1 text-muted-foreground hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 outline-none"
                   >
                     <X className="size-4" />
@@ -57,12 +57,12 @@ export function EventDetailsPopover({ occurrence, anchor, onClose, returnFocusRe
                     <span>
                       {formatDayLabel(occurrence.start, timeZone, locale)}
                       <br />
-                      {formatTimeRange(occurrence.start, occurrence.end, timeZone, locale, occurrence.allDay)}
+                      {formatTimeRange(occurrence.start, occurrence.end, timeZone, locale, occurrence.allDay, messages.allDay)}
                     </span>
                   </p>
                   {occurrence.isRecurring && (
                     <p className="flex items-center gap-2">
-                      <Repeat aria-hidden className="size-4" /> Recurring event
+                      <Repeat aria-hidden className="size-4" /> {messages.recurringEvent}
                     </p>
                   )}
                   {occurrence.location && (
@@ -70,40 +70,31 @@ export function EventDetailsPopover({ occurrence, anchor, onClose, returnFocusRe
                       <MapPin aria-hidden className="size-4" /> {occurrence.location}
                     </p>
                   )}
-                  {resourceNames && <p>With: {resourceNames}</p>}
+                  {resourceNames && <p>{messages.with(resourceNames)}</p>}
                   {occurrence.description && <p className="text-foreground">{occurrence.description}</p>}
                 </Popover.Description>
                 {occurrence && (editable || canCreate || canDelete(occurrence)) && (
-                  <div role="group" aria-label="Event actions" className="flex flex-wrap gap-1 border-t pt-3">
+                  <div role="group" aria-label={messages.eventActions} className="flex flex-wrap gap-1 border-t pt-3">
                     {editable && (
                       <button type="button" className={actionClass} onClick={() => openEditor({ mode: 'edit', occurrence })}>
-                        <Pencil aria-hidden className="size-3.5" /> Edit
+                        <Pencil aria-hidden className="size-3.5" /> {messages.edit}
                       </button>
                     )}
                     {canCreate && (
                       <button type="button" className={actionClass} onClick={() => duplicateEvent(occurrence)}>
-                        <Copy aria-hidden className="size-3.5" /> Duplicate
+                        <Copy aria-hidden className="size-3.5" /> {messages.duplicate}
                       </button>
                     )}
                     {canDelete(occurrence) && (
                       <button type="button" className={cn(actionClass, 'text-destructive')} onClick={() => deleteEvent(occurrence)}>
-                        <Trash2 aria-hidden className="size-3.5" /> Delete
+                        <Trash2 aria-hidden className="size-3.5" /> {messages.delete}
                       </button>
                     )}
                   </div>
                 )}
                 {editable && occurrence && (
-                  <div role="group" aria-label="Adjust event" className="grid grid-cols-3 gap-1 border-t pt-3">
-                    {(
-                      [
-                        ['earlier', 'Earlier'],
-                        ['later', 'Later'],
-                        ['shorter', 'Shorter'],
-                        ['prev-day', 'Prev day'],
-                        ['next-day', 'Next day'],
-                        ['longer', 'Longer'],
-                      ] as const
-                    )
+                  <div role="group" aria-label={messages.adjustEvent} className="grid grid-cols-3 gap-1 border-t pt-3">
+                    {(['earlier', 'later', 'shorter', 'prev-day', 'next-day', 'longer'] as const).map((a) => [a, messages.nudge[a]] as const)
                       .filter(([a]) => !occurrence.allDay || (a !== 'earlier' && a !== 'later' && a !== 'shorter' && a !== 'longer'))
                       .map(([action, text]) => (
                         <button

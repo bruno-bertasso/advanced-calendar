@@ -68,21 +68,21 @@ export function CalendarContextMenu({ children }: { children: ReactNode }) {
               <>
                 <div className="truncate px-2 py-1 text-xs font-medium text-muted-foreground">{occ.title}</div>
                 <ContextMenu.Item className={itemClass} onClick={() => cal.openEvent(occ, target.anchor)}>
-                  <Eye /> View details
+                  <Eye /> {cal.messages.viewDetails}
                 </ContextMenu.Item>
                 {cal.canEdit(occ) && (
                   <ContextMenu.Item className={itemClass} onClick={() => cal.openEditor({ mode: 'edit', occurrence: occ })}>
-                    <Pencil /> Edit…
+                    <Pencil /> {cal.messages.editEllipsis}
                   </ContextMenu.Item>
                 )}
                 {cal.canCreate && (
                   <ContextMenu.Item className={itemClass} onClick={() => cal.duplicateEvent(occ)}>
-                    <Copy /> Duplicate
+                    <Copy /> {cal.messages.duplicate}
                   </ContextMenu.Item>
                 )}
                 {cal.canDelete(occ) && (
                   <ContextMenu.Item className={`${itemClass} text-destructive [&_svg]:text-destructive`} onClick={() => cal.deleteEvent(occ)}>
-                    <Trash2 /> Delete
+                    <Trash2 /> {cal.messages.delete}
                   </ContextMenu.Item>
                 )}
                 <ContextMenu.Separator className="my-1 h-px bg-border" />
@@ -91,13 +91,13 @@ export function CalendarContextMenu({ children }: { children: ReactNode }) {
             {target.type === 'slot' && cal.onSlotSelect && (
               <>
                 <ContextMenu.Item className={itemClass} onClick={() => cal.onSlotSelect?.(target.slot)}>
-                  <CalendarPlus /> New event here
+                  <CalendarPlus /> {cal.messages.newEventHere}
                 </ContextMenu.Item>
                 <ContextMenu.Separator className="my-1 h-px bg-border" />
               </>
             )}
             <ContextMenu.Item className={itemClass} onClick={() => cal.navigate('today')}>
-              <Undo2 /> Go to today
+              <Undo2 /> {cal.messages.goToToday}
             </ContextMenu.Item>
           </ContextMenu.Popup>
         </ContextMenu.Positioner>

@@ -8,14 +8,14 @@ import { MS_DAY, overlaps } from './dates';
  * 9:00 across DST), we convert DTSTART to a "floating" UTC date holding the event zone's
  * wall-clock fields, expand, then map each result back to a real instant in that zone.
  */
-function toFloating(date: Date, timeZone: string): Date {
+export function toFloating(date: Date, timeZone: string): Date {
   const z = new TZDate(date.getTime(), timeZone);
   return new Date(
     Date.UTC(z.getFullYear(), z.getMonth(), z.getDate(), z.getHours(), z.getMinutes(), z.getSeconds()),
   );
 }
 
-function fromFloating(floating: Date, timeZone: string): Date {
+export function fromFloating(floating: Date, timeZone: string): Date {
   const z = new TZDate(
     floating.getUTCFullYear(),
     floating.getUTCMonth(),
@@ -28,7 +28,7 @@ function fromFloating(floating: Date, timeZone: string): Date {
   return new Date(z.getTime());
 }
 
-function normaliseRule(rrule: string): string {
+export function normaliseRule(rrule: string): string {
   return rrule
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -98,6 +98,21 @@ export function expandEvent(
   return result;
 }
 
+/**
+ * Per-event cache of the last expansion. Optimistic updates replace only the edited event
+ * object, so every other event (including expensive recurring ones) hits the cache.
+ */
+const expansionCache = new WeakMap<CalendarEvent, { key: string; result: EventOccurrence[] }>();
+
+function expandCached(event: CalendarEvent, rangeStart: Date, rangeEnd: Date, tz: string): EventOccurrence[] {
+  const key = `${rangeStart.getTime()}|${rangeEnd.getTime()}|${tz}`;
+  const hit = expansionCache.get(event);
+  if (hit && hit.key === key) return hit.result;
+  const result = expandEvent(event, rangeStart, rangeEnd, tz);
+  expansionCache.set(event, { key, result });
+  return result;
+}
+
 export function expandEvents(
   events: readonly CalendarEvent[],
   rangeStart: Date,
@@ -105,6 +120,6 @@ export function expandEvents(
   defaultTimeZone: string,
 ): EventOccurrence[] {
   return events
-    .flatMap((e) => expandEvent(e, rangeStart, rangeEnd, defaultTimeZone))
+    .flatMap((e) => expandCached(e, rangeStart, rangeEnd, defaultTimeZone))
     .sort((a, b) => a.start.getTime() - b.start.getTime() || b.end.getTime() - a.end.getTime());
 }

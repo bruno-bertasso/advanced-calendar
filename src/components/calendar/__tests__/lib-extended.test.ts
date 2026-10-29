@@ -1,6 +1,6 @@
 import { TZDate } from '@date-fns/tz';
 import { describe, expect, it } from 'vitest';
-import { repeatKeyFor } from '../event-editor-dialog';
+import { repeatKeyFor } from '../lib/repeat';
 import { getRangeForView, toIsoDay } from '../lib/dates';
 import { resolveDrop, type DragData } from '../lib/dnd';
 import { optimisticReducer } from '../lib/optimistic';

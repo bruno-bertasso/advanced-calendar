@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { addDays, addMonths, addYears, endOfWeek, isSameMonth, startOfDay, startOfWeek } from 'date-fns';
 import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
-import { useCalendar } from '../calendar-context';
+import { isPreviewOccurrence, useCalendar, useOccurrencesWithPreview } from '../calendar-context';
 import { slotDataAttributes } from '../calendar-context-menu';
 import { EventCard } from '../event-card';
 import type { DropData } from '../lib/dnd';
@@ -22,7 +22,8 @@ export interface MonthViewProps {
 
 export function MonthView({ className }: MonthViewProps) {
   const cal = useCalendar();
-  const { range, cursor, timeZone, locale, weekStartsOn, occurrences, maxEventsPerCell, isNarrow } = cal;
+  const { range, cursor, timeZone, locale, weekStartsOn, maxEventsPerCell, isNarrow } = cal;
+  const occurrences = useOccurrencesWithPreview(cal.occurrences);
   const gridRef = useRef<HTMLDivElement>(null);
   const wantsFocus = useRef(false);
 
@@ -138,7 +139,11 @@ interface MonthCellProps {
 
 function MonthCell({ day, column, segments }: MonthCellProps) {
   const cal = useCalendar();
-  const { cursor, today, timeZone, locale, maxEventsPerCell, isNarrow, view } = cal;
+  const { cursor, today, timeZone, locale, maxEventsPerCell, isNarrow, view, messages, blockedRanges } = cal;
+  // A day fully covered by a global blocked range is shaded and announced as unavailable.
+  const dayBlocked =
+    blockedRanges.length > 0 &&
+    blockedRanges.some((b) => !b.resourceId && b.start.getTime() <= day.getTime() && b.end.getTime() >= addDays(day, 1).getTime());
   const isToday = isSameDay(day, today);
   const isSelected = isSameDay(day, cursor);
   const isOutside = !isSameMonth(day, cursor);
@@ -147,8 +152,8 @@ function MonthCell({ day, column, segments }: MonthCellProps) {
 
   const covering = segments.filter((s) => s.startCol <= column && s.endCol >= column);
   const visible = segments.filter((s) => s.startCol === column && s.lane < maxEventsPerCell);
-  const hidden = covering.filter((s) => s.lane >= maxEventsPerCell);
-  const dayEvents = covering.map((s) => s.occurrence);
+  const hidden = covering.filter((s) => s.lane >= maxEventsPerCell && !isPreviewOccurrence(s.occurrence));
+  const dayEvents = covering.map((s) => s.occurrence).filter((o) => !isPreviewOccurrence(o));
 
   const dayNumber = new Intl.DateTimeFormat(locale, { day: 'numeric', timeZone }).format(day);
   const defaultContent = (
@@ -174,8 +179,9 @@ function MonthCell({ day, column, segments }: MonthCellProps) {
     defaultContent,
   };
 
-  const label = `${formatDayLabel(day, timeZone, locale)}${isToday ? ', today' : ''}${
-    dayEvents.length ? `, ${dayEvents.length} ${dayEvents.length === 1 ? 'event' : 'events'}` : ''
+  const realEvents = dayEvents.filter((o) => !isPreviewOccurrence(o));
+  const label = `${formatDayLabel(day, timeZone, locale)}${isToday ? messages.todaySuffix : ''}${
+    realEvents.length ? `, ${messages.eventCount(realEvents.length)}` : ''}${dayBlocked ? `, ${messages.unavailable}` : ''
   }`;
 
   return (
@@ -191,6 +197,7 @@ function MonthCell({ day, column, segments }: MonthCellProps) {
       {...slotDataAttributes({ start: new Date(day.getTime()), end: new Date(addDays(day, 1).getTime()), allDay: true })}
       data-outside={isOutside ? '' : undefined}
       data-today={isToday ? '' : undefined}
+      data-blocked={dayBlocked ? '' : undefined}
       data-over={isOver ? '' : undefined}
       onClick={(e) => {
         if (e.target === e.currentTarget || !(e.target as HTMLElement).closest('[data-calendar-event],button')) {
@@ -202,7 +209,7 @@ function MonthCell({ day, column, segments }: MonthCellProps) {
       }
       className={cn(
         'relative min-w-0 border-e p-1 outline-none last:border-e-0',
-        'data-[outside]:bg-muted/40 data-[over]:bg-accent',
+        'data-[outside]:bg-muted/40 data-[over]:bg-accent data-[blocked]:[background-image:repeating-linear-gradient(135deg,color-mix(in_oklab,var(--muted-foreground)_18%,transparent)_0_2px,transparent_2px_8px)]',
         'focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
         'aria-selected:bg-accent/60',
       )}
@@ -266,16 +273,16 @@ function MoreEventsPopover({
   tabbable: boolean;
   top: number;
 }) {
-  const { timeZone, locale } = useCalendar();
+  const { timeZone, locale, messages } = useCalendar();
   return (
     <Popover.Root>
       <Popover.Trigger
         tabIndex={tabbable ? 0 : -1}
         className="absolute start-0.5 z-10 h-5 rounded px-1.5 text-xs font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         style={{ top: `${top}rem` }}
-        aria-label={`Show ${hiddenCount} more ${hiddenCount === 1 ? 'event' : 'events'} on ${formatDayLabel(day, timeZone, locale)}`}
+        aria-label={messages.showMore(hiddenCount, formatDayLabel(day, timeZone, locale))}
       >
-        +{hiddenCount} more
+        {messages.more(hiddenCount)}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner sideOffset={4} align="start" collisionPadding={12} className="z-50">
@@ -351,19 +358,19 @@ function EventList({ events, day }: { events: EventOccurrence[]; day: TZDate }) 
 
 /** Below 768px the month grid shows dots only; the selected day's events are listed here. */
 function NarrowDayAgenda() {
-  const { cursor, occurrences, timeZone, locale } = useCalendar();
+  const { cursor, occurrences, timeZone, locale, messages } = useCalendar();
   const dayStart = cursor.getTime();
   const dayEnd = addDays(cursor, 1).getTime();
   const events = occurrences.filter(
     (o) => o.start.getTime() < dayEnd && Math.max(o.end.getTime(), o.start.getTime() + 1) > dayStart,
   );
   return (
-    <section aria-label="Selected day" className="border-t p-3">
+    <section aria-label={messages.selectedDay} className="border-t p-3">
       <h3 className="mb-2 text-sm font-semibold">{formatDayLabel(inZone(cursor, timeZone), timeZone, locale)}</h3>
       {events.length ? (
         <EventList events={events} day={cursor} />
       ) : (
-        <p className="text-sm text-muted-foreground">No events</p>
+        <p className="text-sm text-muted-foreground">{messages.noEvents}</p>
       )}
     </section>
   );

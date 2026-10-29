@@ -1,5 +1,5 @@
 import { TZDate } from '@date-fns/tz';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Calendar, CalendarBody, CalendarHeader, type CalendarEvent, type CalendarProps } from '../index';
@@ -28,12 +28,17 @@ function renderCalendar(props: Partial<CalendarProps> = {}) {
   );
 }
 
+/** Wait for a code-split (React.lazy) view to replace its skeleton. */
+const viewReady = () =>
+  waitFor(() => expect(document.querySelector('[data-calendar-body] .animate-pulse')).toBeNull());
+
 /** Let async optimistic transitions settle inside act(). */
 const settle = (ms = 60) => act(() => new Promise((r) => setTimeout(r, ms)));
 
 describe('year view', () => {
-  it('renders 12 month grids with a single tab stop on the cursor day', () => {
+  it('renders 12 month grids with a single tab stop on the cursor day', async () => {
     renderCalendar({ defaultView: 'year' });
+    await viewReady();
     expect(screen.getByRole('heading', { name: '2026', level: 2 })).toBeInTheDocument();
     const grids = screen.getAllByRole('grid');
     expect(grids).toHaveLength(12);
@@ -46,6 +51,7 @@ describe('year view', () => {
     const user = userEvent.setup();
     const onViewChange = vi.fn();
     renderCalendar({ defaultView: 'year', onViewChange });
+    await viewReady();
     act(() => (document.querySelector('[data-year-day][tabindex="0"]') as HTMLElement).focus());
     await user.keyboard('{PageDown}');
     expect(document.activeElement).toHaveAttribute('data-date', '2026-11-28');
@@ -55,8 +61,9 @@ describe('year view', () => {
 });
 
 describe('agenda view', () => {
-  it('lists upcoming events grouped by day headings', () => {
+  it('lists upcoming events grouped by day headings', async () => {
     renderCalendar({ defaultView: 'agenda' });
+    await viewReady();
     const list = screen.getByRole('list', { name: /Agenda/ });
     expect(within(list).getByRole('heading', { name: /Wednesday, October 28, 2026/ })).toBeInTheDocument();
     // The two-day offsite appears on both days.
@@ -64,14 +71,15 @@ describe('agenda view', () => {
     expect(within(list).getByRole('button', { name: /Planning/ })).toBeInTheDocument();
   });
 
-  it('shows an empty state when there is nothing in range', () => {
+  it('shows an empty state when there is nothing in range', async () => {
     renderCalendar({ defaultView: 'agenda', events: [] });
+    await viewReady();
     expect(screen.getByText(/No events between/)).toHaveAttribute('role', 'status');
   });
 });
 
 describe('timeline view', () => {
-  it('renders one row per resource with events placed in their row', () => {
+  it('renders one row per resource with events placed in their row', async () => {
     // A week without "now" in it; jsdom doesn't scroll, so the visible window starts at the
     // range start (Sun Nov 1) and spans ~18h at 1200px.
     renderCalendar({
@@ -79,6 +87,7 @@ describe('timeline view', () => {
       defaultDate: new TZDate(2026, 10, 3, TZ),
       events: [{ id: 'p', title: 'Planning', start: new Date('2026-11-01T10:00Z'), end: new Date('2026-11-01T11:00Z'), resourceIds: ['r2'] }],
     });
+    await viewReady();
     const grid = screen.getByRole('grid', { name: /Timeline/ });
     const headers = within(grid).getAllByRole('rowheader').map((h) => h.textContent);
     expect(headers).toEqual(['Room 1', 'Room 2']);
@@ -89,14 +98,16 @@ describe('timeline view', () => {
   it('moves the roving focus between resource rows with arrow keys', async () => {
     const user = userEvent.setup();
     renderCalendar({ defaultView: 'timeline' });
+    await viewReady();
     act(() => (document.querySelector('[data-timeline-track="0"]') as HTMLElement).focus());
     await user.keyboard('{ArrowDown}');
     await act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
     expect(document.activeElement).toHaveAttribute('data-timeline-track', '1');
   });
 
-  it('uses renderResourceHeader for row headers', () => {
+  it('uses renderResourceHeader for row headers', async () => {
     renderCalendar({ defaultView: 'timeline', renderResourceHeader: ({ resource }) => <i>res:{resource.title}</i> });
+    await viewReady();
     expect(screen.getByText('res:Room 2')).toBeInTheDocument();
   });
 });

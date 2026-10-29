@@ -9,27 +9,10 @@ import { cn } from '@/lib/utils';
 import { useCalendar, type EditorState } from './calendar-context';
 import { inZone, toIsoDay } from './lib/dates';
 import { createEventId } from './lib/optimistic';
+import { REPEAT_PRESETS, repeatKeyFor, type RepeatKey } from './lib/repeat';
+
+export { REPEAT_PRESETS, repeatKeyFor };
 import type { CalendarEvent, EventOccurrence } from './types';
-
-export const REPEAT_PRESETS = {
-  none: { label: 'Does not repeat', rule: undefined },
-  daily: { label: 'Daily', rule: 'FREQ=DAILY' },
-  weekdays: { label: 'Every weekday (Mon–Fri)', rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR' },
-  weekly: { label: 'Weekly', rule: 'FREQ=WEEKLY' },
-  monthly: { label: 'Monthly', rule: 'FREQ=MONTHLY' },
-  yearly: { label: 'Yearly', rule: 'FREQ=YEARLY' },
-} as const satisfies Record<string, { label: string; rule: string | undefined }>;
-
-type RepeatKey = keyof typeof REPEAT_PRESETS | 'custom';
-
-export function repeatKeyFor(rrule: string | undefined): RepeatKey {
-  if (!rrule) return 'none';
-  const body = rrule.replace(/^RRULE:/i, '').trim().toUpperCase();
-  const hit = (Object.keys(REPEAT_PRESETS) as (keyof typeof REPEAT_PRESETS)[]).find(
-    (k) => REPEAT_PRESETS[k].rule === body,
-  );
-  return hit ?? 'custom';
-}
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 
@@ -71,6 +54,7 @@ const inputClass =
 function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEditorDialogProps, 'state'> & { state: EditorState }) {
   const cal = useCalendar();
   const { timeZone, resources } = cal;
+  const m = cal.messages.editor;
   const id = useId();
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -105,8 +89,8 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
   const isEdit = state.mode === 'edit';
   const isRecurring = isEdit && state.occurrence.isRecurring;
   const repeatItems = [
-    ...Object.entries(REPEAT_PRESETS).map(([value, p]) => ({ value, label: p.label })),
-    ...(repeat === 'custom' ? [{ value: 'custom', label: `Custom (${initial.rrule})` }] : []),
+      ...(Object.keys(REPEAT_PRESETS) as (keyof typeof REPEAT_PRESETS)[]).map((value) => ({ value, label: m.repeatOptions[value] })),
+    ...(repeat === 'custom' ? [{ value: 'custom', label: m.custom(initial.rrule ?? '') }] : []),
   ];
 
   const submit = (e: FormEvent) => {
@@ -115,8 +99,8 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
     const endRaw = allDay ? parseLocal(endDate, '00:00', timeZone) : parseLocal(endDate, endTime, timeZone);
     const end = allDay && endRaw ? new Date(addDays(inZone(endRaw, timeZone), 1).getTime()) : endRaw;
     const next: typeof errors = {};
-    if (!title.trim()) next.title = 'Enter a title.';
-    if (!start || !end || end.getTime() <= start.getTime()) next.end = 'End must be after start.';
+    if (!title.trim()) next.title = m.titleRequired;
+    if (!start || !end || end.getTime() <= start.getTime()) next.end = m.endAfterStart;
     setErrors(next);
     if (next.title) return titleRef.current?.focus();
     if (next.end || !start || !end) return document.getElementById(`${id}-end-date`)?.focus();
@@ -143,19 +127,19 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <Dialog.Title className="text-lg font-semibold">{isEdit ? 'Edit event' : 'New event'}</Dialog.Title>
+          <Dialog.Title className="text-lg font-semibold">{isEdit ? m.editEvent : m.newEvent}</Dialog.Title>
           <Dialog.Description className="text-sm text-muted-foreground">
-            {isRecurring ? 'Changes apply to every event in this series.' : `Times are in ${timeZone}.`}
+            {isRecurring ? `${m.seriesNote} ${m.timesIn(timeZone)}` : m.timesIn(timeZone)}
           </Dialog.Description>
         </div>
-        <Dialog.Close aria-label="Close" className="rounded-md p-1 text-muted-foreground outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50">
+        <Dialog.Close aria-label={cal.messages.close} className="rounded-md p-1 text-muted-foreground outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50">
           <X className="size-4" />
         </Dialog.Close>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor={`${id}-title`} className="text-sm font-medium">
-          Title
+          {m.title}
         </label>
         <input
           ref={titleRef}
@@ -177,17 +161,17 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} className="size-4 accent-[var(--primary)]" />
-        All day
+        {m.allDay}
       </label>
 
       <fieldset className="grid grid-cols-[auto_1fr_auto] items-center gap-x-2 gap-y-2">
-        <legend className="sr-only">When</legend>
+        <legend className="sr-only">{m.when}</legend>
         <label htmlFor={`${id}-start-date`} className="text-sm font-medium">
-          Starts
+          {m.starts}
         </label>
         <input id={`${id}-start-date`} type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input
-          aria-label="Start time"
+          aria-label={m.startTime}
           type="time"
           className={cn(inputClass, 'w-28', allDay && 'invisible')}
           value={startTime}
@@ -195,7 +179,7 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
           disabled={allDay}
         />
         <label htmlFor={`${id}-end-date`} className="text-sm font-medium">
-          Ends
+          {m.ends}
         </label>
         <input
           id={`${id}-end-date`}
@@ -207,7 +191,7 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
           aria-describedby={errors.end ? `${id}-end-error` : undefined}
         />
         <input
-          aria-label="End time"
+          aria-label={m.endTime}
           type="time"
           className={cn(inputClass, 'w-28', allDay && 'invisible')}
           value={endTime}
@@ -224,7 +208,7 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
 
       <div className="flex flex-col gap-1.5">
         <span id={`${id}-repeat`} className="text-sm font-medium">
-          Repeat
+          {m.repeat}
         </span>
         <Select.Root value={repeat} onValueChange={(v) => v && setRepeat(v as RepeatKey)} items={repeatItems}>
           <Select.Trigger aria-labelledby={`${id}-repeat`} className={cn(inputClass, 'flex items-center justify-between')}>
@@ -254,14 +238,14 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor={`${id}-location`} className="text-sm font-medium">
-          Location
+          {m.location}
         </label>
         <input id={`${id}-location`} className={inputClass} value={location} onChange={(e) => setLocation(e.target.value)} />
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor={`${id}-description`} className="text-sm font-medium">
-          Description
+          {m.description}
         </label>
         <textarea
           id={`${id}-description`}
@@ -273,7 +257,7 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
 
       {resources.length > 0 && (
         <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1.5 text-sm font-medium">Resources</legend>
+          <legend className="mb-1.5 text-sm font-medium">{m.resources}</legend>
           <div className="flex max-h-32 flex-wrap gap-x-4 gap-y-1 overflow-y-auto rounded-md border p-2">
             {resources.map((r) => (
               <label key={r.id} className="flex items-center gap-1.5 text-sm">
@@ -302,11 +286,11 @@ function EditorForm({ state, onClose, onCreate, onEdit, onDelete }: Omit<EventEd
               onClose();
             }}
           >
-            Delete{isRecurring ? ' series' : ''}
+            {m.deleteEvent}
           </Button>
         )}
-        <Dialog.Close render={<Button variant="outline" />}>Cancel</Dialog.Close>
-        <Button type="submit">{isEdit ? 'Save' : 'Create'}</Button>
+        <Dialog.Close render={<Button variant="outline" />}>{m.cancel}</Dialog.Close>
+        <Button type="submit">{isEdit ? m.save : m.create}</Button>
       </div>
     </form>
   );

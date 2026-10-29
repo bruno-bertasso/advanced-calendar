@@ -1,10 +1,12 @@
 import type { TZDate } from '@date-fns/tz';
 import { useDroppable } from '@dnd-kit/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { addMinutes } from 'date-fns';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { addDays, addMinutes } from 'date-fns';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { cn } from '@/lib/utils';
-import { useCalendar } from '../calendar-context';
+import { isPreviewOccurrence, useCalendar, useOccurrencesWithPreview } from '../calendar-context';
+import { useNow } from '../hooks/use-now';
+import { blocksFor, hatchStyle } from '../lib/availability';
 import { EventCard } from '../event-card';
 import type { DropData } from '../lib/dnd';
 import { formatDateTime, isSameDay } from '../lib/dates';
@@ -40,6 +42,7 @@ export function buildTimelineRows(
   resources: readonly CalendarResource[],
   rangeStart: Date,
   rangeEnd: Date,
+  labels: { unassigned: string; allEvents: string } = { unassigned: 'Unassigned', allEvents: 'All events' },
 ): TimelineRow[] {
   const startMs = rangeStart.getTime();
   const total = Math.round((rangeEnd.getTime() - startMs) / 60_000);
@@ -51,7 +54,7 @@ export function buildTimelineRows(
   const known = new Set(resources.map((r) => r.id));
   const unassigned = occurrences.filter((o) => !o.resourceIds?.some((id) => known.has(id)));
   if (unassigned.length || groups.length === 0) {
-    groups.push({ id: UNASSIGNED_ROW_ID, title: resources.length ? 'Unassigned' : 'All events', occs: unassigned });
+    groups.push({ id: UNASSIGNED_ROW_ID, title: resources.length ? labels.unassigned : labels.allEvents, occs: unassigned });
   }
 
   return groups.map((g) => {
@@ -88,16 +91,18 @@ export interface TimelineViewProps {
 export function TimelineView({ className }: TimelineViewProps) {
   const cal = useCalendar();
   const {
-    range, occurrences, resources, visibleResources, timeZone, locale, timelineSlotMinutes, timelinePxPerMinute,
-    isNarrow, today, scrollToHour, direction,
+    range, resources, visibleResources, timeZone, locale, timelineSlotMinutes, timelinePxPerMinute,
+    isNarrow, today, scrollToHour, direction, messages,
   } = cal;
+  const occurrences = useOccurrencesWithPreview(cal.occurrences);
+  const now = useNow();
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerW = isNarrow ? 112 : 192;
   const rowResources = visibleResources.length ? visibleResources : resources;
 
   const rows = useMemo(
-    () => buildTimelineRows(occurrences, rowResources, range.start, range.end),
-    [occurrences, rowResources, range.start, range.end],
+    () => buildTimelineRows(occurrences, rowResources, range.start, range.end, messages),
+    [occurrences, rowResources, range.start, range.end, messages],
   );
   const totalMinutes = range.days.length * 24 * 60;
   const columnCount = Math.ceil(totalMinutes / timelineSlotMinutes);
@@ -139,7 +144,7 @@ export function TimelineView({ className }: TimelineViewProps) {
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const nowMinute = (Date.now() - range.start.getTime()) / 60_000;
+    const nowMinute = (now - range.start.getTime()) / 60_000;
     const minute = nowMinute > 0 && nowMinute < totalMinutes ? nowMinute - 60 : scrollToHour * 60;
     colVirtualizer.scrollToOffset(Math.max(0, minute * timelinePxPerMinute));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,7 +199,7 @@ export function TimelineView({ className }: TimelineViewProps) {
     e.preventDefault();
   };
 
-  const nowMinute = (Date.now() - range.start.getTime()) / 60_000;
+  const nowMinute = (now - range.start.getTime()) / 60_000;
   const hourFmt = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: timelineSlotMinutes % 60 ? '2-digit' : undefined, timeZone });
   const dayFmt = new Intl.DateTimeFormat(locale, { weekday: 'short', month: 'short', day: 'numeric', timeZone });
   const dayW = 24 * 60 * timelinePxPerMinute;
@@ -208,7 +213,7 @@ export function TimelineView({ className }: TimelineViewProps) {
     >
       <div
         role="grid"
-        aria-label={`Timeline, ${cal.title}`}
+        aria-label={messages.timeline(cal.title)}
         aria-rowcount={rows.length + 1}
         aria-colcount={2}
         aria-readonly={cal.onSlotSelect ? undefined : true}
@@ -219,7 +224,7 @@ export function TimelineView({ className }: TimelineViewProps) {
         <div role="rowgroup" className="sticky top-0 z-30 flex border-b bg-card" style={{ height: HEADER_PX, width: headerW + trackW }}>
           <div role="row" aria-rowindex={1} className="flex">
             <div role="columnheader" className="sticky start-0 z-10 flex items-end border-e bg-card px-3 pb-1.5 text-xs font-medium text-muted-foreground" style={{ width: headerW }}>
-              Resources
+              {messages.resources}
             </div>
             <div role="columnheader" aria-label={cal.title} className="relative" style={{ width: trackW }}>
               {range.days.map((d, i) => (
@@ -309,6 +314,57 @@ function TimelineRowView({
 }: TimelineRowViewProps) {
   const cal = useCalendar();
   const px = cal.timelinePxPerMinute;
+  const slot = cal.timelineSlotMinutes;
+  const resourceIds = row.resource ? [row.resource.id] : undefined;
+  const rowBlocks = useMemo(
+    () =>
+      blocksFor(cal.blockedRanges, resourceIds).flatMap((b) => {
+        const s0 = Math.max(0, (b.start.getTime() - rangeStart.getTime()) / 60_000);
+        const e0 = Math.min(dayCount * 1440, (b.end.getTime() - rangeStart.getTime()) / 60_000);
+        return e0 > s0 ? [{ key: `${b.start.getTime()}:${b.resourceId ?? ''}`, label: b.label, s0, e0 }] : [];
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cal.blockedRanges, row.resource, rangeStart, dayCount],
+  );
+
+  // Drag to create (pointer only; keyboard users press Enter on the focused column).
+  const [selection, setSelection] = useState<{ anchor: number; current: number } | null>(null);
+  const minuteAt = (el: HTMLElement, clientX: number) => {
+    const rect = el.getBoundingClientRect();
+    const offset = cal.direction === 'rtl' ? rect.right - clientX : clientX - rect.left;
+    return Math.max(0, Math.min(dayCount * 1440 - slot, Math.floor(offset / px / slot) * slot));
+  };
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || e.pointerType === 'touch' || !cal.onSlotSelect) return;
+    if ((e.target as HTMLElement).closest('[data-calendar-event],[data-calendar-ghost]')) return;
+    const track = e.currentTarget;
+    const anchor = minuteAt(track, e.clientX);
+    let current = anchor;
+    setSelection({ anchor, current });
+    const onMove = (ev: globalThis.PointerEvent) => {
+      const m = minuteAt(track, ev.clientX);
+      if (m !== current) {
+        current = m;
+        setSelection({ anchor, current });
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      setSelection(null);
+      if (current === anchor) return;
+      const from = Math.min(anchor, current);
+      const to = Math.max(anchor, current) + slot;
+      cal.onSlotSelect?.({
+        start: new Date(addMinutes(rangeStart, from).getTime()),
+        end: new Date(addMinutes(rangeStart, to).getTime()),
+        allDay: false,
+        ...(row.resource ? { resourceId: row.resource.id } : {}),
+      });
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
   const dropData: DropData = {
     surface: 'timeline',
     day: rangeStart.getTime(),
@@ -336,7 +392,8 @@ function TimelineRowView({
         ref={setNodeRef}
         role="gridcell"
         tabIndex={isFocusRow ? 0 : -1}
-        aria-label={`${row.title}, ${row.items.length} ${row.items.length === 1 ? 'event' : 'events'}. Focused time ${focusLabel}`}
+        aria-label={`${row.title}, ${cal.messages.eventCount(row.items.filter((i) => !isPreviewOccurrence(i.occurrence)).length)}. ${cal.messages.focusedTime(focusLabel)}`}
+        onPointerDown={onPointerDown}
         data-timeline-track={index}
         data-over={isOver ? '' : undefined}
         className="group/track relative outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50 data-[over]:bg-accent/60"
@@ -346,10 +403,7 @@ function TimelineRowView({
         }}
         onDoubleClick={(e) => {
           if (!cal.onSlotSelect || (e.target as HTMLElement).closest('[data-calendar-event]')) return;
-          const rect = e.currentTarget.getBoundingClientRect();
-          const offset = cal.direction === 'rtl' ? rect.right - e.clientX : e.clientX - rect.left;
-          const slot = cal.timelineSlotMinutes;
-          const minute = Math.floor(offset / px / slot) * slot;
+          const minute = minuteAt(e.currentTarget, e.clientX);
           const start = addMinutes(rangeStart, minute);
           cal.onSlotSelect({
             start: new Date(start.getTime()),
@@ -359,6 +413,44 @@ function TimelineRowView({
           });
         }}
       >
+        {cal.businessHours &&
+          Array.from({ length: dayCount }, (_, i) => {
+            const day = addDays(rangeStart, i);
+            const bh = cal.businessHours!;
+            const open = (bh.daysOfWeek ?? [1, 2, 3, 4, 5]).includes(day.getDay());
+            const spans = open ? [[0, bh.startHour * 60], [bh.endHour * 60, 1440]] : [[0, 1440]];
+            return spans.map(([a, b]) => (
+              <div
+                key={`${i}:${a}`}
+                aria-hidden
+                data-off-hours=""
+                className="pointer-events-none absolute inset-y-0 bg-muted/60"
+                style={{ insetInlineStart: (i * 1440 + a!) * px, width: (b! - a!) * px }}
+              />
+            ));
+          })}
+        {rowBlocks.map((b) => (
+          <div
+            key={b.key}
+            aria-hidden
+            data-calendar-blocked=""
+            className="pointer-events-none absolute inset-y-0 overflow-hidden px-1 pt-0.5 text-[0.65rem] text-muted-foreground"
+            style={{ insetInlineStart: b.s0 * px, width: (b.e0 - b.s0) * px, ...hatchStyle }}
+          >
+            {b.label}
+          </div>
+        ))}
+        {selection && (
+          <div
+            aria-hidden
+            data-selecting=""
+            className="pointer-events-none absolute inset-y-1 rounded-md bg-calendar-event/25 ring-1 ring-calendar-event"
+            style={{
+              insetInlineStart: Math.min(selection.anchor, selection.current) * px,
+              width: (Math.abs(selection.current - selection.anchor) + slot) * px,
+            }}
+          />
+        )}
         {Array.from({ length: dayCount - 1 }, (_, i) => (
           <div key={i} aria-hidden className="absolute inset-y-0 w-px bg-foreground/15" style={{ insetInlineStart: (i + 1) * dayW }} />
         ))}

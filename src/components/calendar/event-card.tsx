@@ -2,7 +2,7 @@ import { useDraggable } from '@dnd-kit/core';
 import { Repeat } from 'lucide-react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
-import { useCalendar, useDragState, type NudgeAction } from './calendar-context';
+import { isPreviewOccurrence, useCalendar, useCalendarConfig, useCalendarState, type NudgeAction } from './calendar-context';
 import type { DragData } from './lib/dnd';
 import { formatTimeRange } from './lib/dates';
 import type { EventDensity, EventOccurrence, EventRenderContext } from './types';
@@ -38,7 +38,42 @@ const KEY_ACTIONS: Record<string, NudgeAction> = {
   'Shift+ArrowDown': 'longer',
 };
 
-export function EventCard({
+/**
+ * Event card. Drag previews (ghost occurrences from `DragState.preview`) render as a
+ * non-interactive outline; everything else is a draggable, focusable button.
+ */
+export function EventCard(props: EventCardProps) {
+  return isPreviewOccurrence(props.occurrence) ? <EventGhost {...props} /> : <InteractiveEventCard {...props} />;
+}
+
+function EventGhost({ occurrence, className, style, isStart = true, isEnd = true }: EventCardProps) {
+  const { timeZone, locale, messages } = useCalendarConfig();
+  const { resources } = useCalendarState();
+  const color = occurrence.color ?? resourceColor(resources, occurrence) ?? 'var(--calendar-event)';
+  return (
+    <div
+      aria-hidden
+      data-calendar-ghost=""
+      className={cn('pointer-events-none z-40 min-w-0', className)}
+      style={{ ...style, ['--event-color' as string]: color }}
+    >
+      <div
+        className={cn(
+          'flex size-full flex-col overflow-hidden rounded-md border-2 border-dashed border-[var(--event-color)] bg-[color-mix(in_oklab,var(--event-color)_28%,var(--background))] px-1.5 py-0.5 text-xs shadow-lg',
+          !isStart && 'rounded-s-none',
+          !isEnd && 'rounded-e-none',
+        )}
+      >
+        <span className="truncate font-medium">{occurrence.title}</span>
+        <span className="truncate tabular-nums text-muted-foreground">
+          {formatTimeRange(occurrence.start, occurrence.end, timeZone, locale, occurrence.allDay, messages.allDay)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function InteractiveEventCard({
   occurrence,
   segmentKey,
   segmentDay,
@@ -55,7 +90,6 @@ export function EventCard({
   style,
 }: EventCardProps) {
   const cal = useCalendar();
-  const drag = useDragState();
   const editable = cal.canEdit(occurrence);
   const draggable = editable && !disableDrag;
   const isPending = cal.isPending(occurrence.seriesId);
@@ -70,7 +104,7 @@ export function EventCard({
   });
 
   const isDragging = move.isDragging || resize.isDragging;
-  const timeLabel = formatTimeRange(occurrence.start, occurrence.end, cal.timeZone, cal.locale, occurrence.allDay);
+  const timeLabel = formatTimeRange(occurrence.start, occurrence.end, cal.timeZone, cal.locale, occurrence.allDay, cal.messages.allDay);
   const ctx: EventRenderContext = {
     event: occurrence,
     view: cal.view,
@@ -84,18 +118,13 @@ export function EventCard({
     timeLabel,
   };
 
-  // Live resize preview: grow the card by the snapped delta while dragging the handle.
-  const resizeMinutes = resize.isDragging && drag.kind === 'resize' ? drag.resizeMinutes : 0;
-  const heightGrowth = surface === 'time-grid' ? resizeMinutes * cal.pxPerMinute : 0;
-  const widthGrowth = surface === 'timeline' ? resizeMinutes * cal.timelinePxPerMinute : 0;
-
   const color = occurrence.color ?? resourceColor(cal.resources, occurrence) ?? 'var(--calendar-event)';
   const label = [
     occurrence.title,
     timeLabel,
     occurrence.location,
-    occurrence.isRecurring ? 'recurring' : null,
-    isPending ? 'saving' : null,
+    occurrence.isRecurring ? cal.messages.recurring : null,
+    isPending ? cal.messages.saving : null,
   ]
     .filter(Boolean)
     .join(', ');
@@ -120,10 +149,6 @@ export function EventCard({
     if (draggable) move.listeners?.onKeyDown?.(e);
   };
 
-  const transform = move.transform
-    ? `translate3d(${move.transform.x}px, ${move.transform.y}px, 0)`
-    : undefined;
-
   return (
     <div
       ref={move.setNodeRef}
@@ -134,16 +159,11 @@ export function EventCard({
       data-selected={isSelected ? '' : undefined}
       className={cn(
         'group/event @container relative min-w-0 select-none [container-type:size]',
-        'data-[dragging]:z-30 data-[dragging]:opacity-80 data-[dragging]:shadow-lg',
+        // The card stays in place while dragging; the ghost preview shows the target.
+        'data-[dragging]:opacity-50',
         className,
       )}
-      style={{
-        ...style,
-        ...(heightGrowth && typeof style?.height === 'number' ? { height: style.height + heightGrowth } : {}),
-        ...(widthGrowth && typeof style?.width === 'number' ? { width: style.width + widthGrowth } : {}),
-        transform,
-        ['--event-color' as string]: color,
-      }}
+      style={{ ...style, ['--event-color' as string]: color }}
     >
       <button
         type="button"
@@ -151,7 +171,7 @@ export function EventCard({
         {...(draggable ? move.listeners : {})}
         onKeyDown={onKeyDown}
         aria-label={label}
-        aria-roledescription={draggable ? 'draggable event' : 'event'}
+        aria-roledescription={draggable ? cal.messages.draggableEvent : cal.messages.event}
         aria-describedby={draggable ? move.attributes['aria-describedby'] : undefined}
         aria-disabled={undefined}
         tabIndex={tabbable ? 0 : -1}

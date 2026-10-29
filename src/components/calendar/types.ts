@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { CalendarMessages, DeepPartial } from './messages';
 
 export const CALENDAR_VIEWS = [
   'day',
@@ -36,6 +37,10 @@ export interface CalendarEvent {
   location?: string;
   /** Set to false to disable drag & resize for this event. */
   editable?: boolean;
+  /** Set on exception events created by "this event only" edits: the series they override. */
+  recurringEventId?: string;
+  /** For exception events: start of the series occurrence they replace. */
+  originalStart?: Date;
   meta?: Record<string, unknown>;
 }
 
@@ -96,7 +101,30 @@ export interface ResourceHeaderRenderContext {
   date?: Date;
 }
 
-export type EventChangeType = 'move' | 'resize' | 'edit';
+export type EventChangeType = 'move' | 'resize' | 'edit' | 'delete';
+
+/** Which events of a recurring series a change applies to (RFC 5545 RANGE semantics). */
+export type RecurrenceScope = 'this' | 'following' | 'all';
+
+export interface BusinessHours {
+  /** 0 = Sunday … 6 = Saturday. Defaults to Monday–Friday. */
+  daysOfWeek?: number[];
+  startHour: number;
+  endHour: number;
+}
+
+export interface BlockedRange {
+  start: Date;
+  end: Date;
+  /** Restrict to one resource; omit to block for everyone. */
+  resourceId?: string;
+  label?: string;
+}
+
+/** Return `false` or a reason string to reject a change before it is applied. */
+export type BeforeEventChange = (
+  change: EventChange,
+) => boolean | string | void | Promise<boolean | string | void>;
 
 export interface EventChange {
   type: EventChangeType;
@@ -106,11 +134,18 @@ export interface EventChange {
   /** New start/end of the dragged occurrence. */
   start: Date;
   end: Date;
+  /** Scope chosen for recurring events (`'all'` for non-recurring ones). */
+  scope: RecurrenceScope;
   /**
-   * The event with the change applied, ready to persist. For recurring series the
-   * whole series is shifted by the same delta ("all events" semantics).
+   * The (series) event with the change applied, ready to persist:
+   * - `all`: the series shifted/edited by the same delta (EXDATEs shifted too)
+   * - `this`: the series with an EXDATE for this occurrence (see `created` for the exception)
+   * - `following`: the series truncated with UNTIL (see `created` for the new series)
+   * - type `delete` + `this`/`following`: the series with the EXDATE / UNTIL applied
    */
   nextEvent: CalendarEvent;
+  /** New events to persist alongside `nextEvent` (exception event or split-off series). */
+  created?: CalendarEvent[];
 }
 
 export interface SlotSelectInfo {
@@ -166,6 +201,17 @@ export interface CalendarProps {
   onEventDelete?: (event: CalendarEvent) => void | Promise<void>;
   /** Disable the built-in create/edit dialog (keep callbacks, bring your own UI). */
   disableEventEditor?: boolean;
+
+  /** How edits to recurring occurrences are scoped. `'ask'` (default) shows a dialog. */
+  recurringEditScope?: 'ask' | RecurrenceScope;
+  /** Validate a change before it is applied (optimistically) — e.g. room conflicts. */
+  onBeforeEventChange?: BeforeEventChange;
+  /** Shade time outside business hours in time grids and the timeline. */
+  businessHours?: BusinessHours;
+  /** Unavailable ranges: rendered hatched; moves, resizes and creation into them are rejected. */
+  blockedRanges?: BlockedRange[];
+  /** Override any user-facing string (see `enMessages` / `ptBRMessages`). */
+  messages?: DeepPartial<CalendarMessages>;
 
   /** May return a promise; the UI shows the optimistic state until it settles and reverts on rejection. */
   onEventChange?: (change: EventChange) => void | Promise<void>;

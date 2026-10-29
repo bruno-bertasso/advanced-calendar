@@ -1,15 +1,17 @@
-import type { ComponentType } from 'react';
+import { lazy, Suspense, type ComponentType } from 'react';
 import { cn } from '@/lib/utils';
 import { useCalendar } from './calendar-context';
-import { VIEW_LABELS } from './calendar-header';
 import type { CalendarView } from './types';
-import { AgendaView } from './views/agenda-view';
 import { MonthView } from './views/month-view';
-import { TimelineView } from './views/timeline-view';
 import { WeekView } from './views/week-view';
-import { YearView } from './views/year-view';
 
 export type ViewRegistry = Partial<Record<CalendarView, ComponentType>>;
+
+// Month and the time grid are the common entry points and ship in the main chunk; the
+// other views are code-split and fetched the first time they are shown.
+export const YearView = lazy(() => import('./views/year-view').then((m) => ({ default: m.YearView })));
+export const AgendaView = lazy(() => import('./views/agenda-view').then((m) => ({ default: m.AgendaView })));
+export const TimelineView = lazy(() => import('./views/timeline-view').then((m) => ({ default: m.TimelineView })));
 
 /** All built-in views. `day` and `work-week` reuse the time-grid WeekView. */
 export const DEFAULT_VIEW_REGISTRY: ViewRegistry = {
@@ -28,18 +30,30 @@ export interface CalendarBodyProps {
   views?: ViewRegistry;
 }
 
+function ViewSkeleton() {
+  return (
+    <div aria-hidden className="flex flex-1 flex-col gap-2 p-4">
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className="h-8 animate-pulse rounded-md bg-muted" />
+      ))}
+    </div>
+  );
+}
+
 /** Renders the component registered for the active view. */
 export function CalendarBody({ className, views }: CalendarBodyProps) {
-  const { view } = useCalendar();
+  const { view, messages } = useCalendar();
   const registry = { ...DEFAULT_VIEW_REGISTRY, ...views };
   const View = registry[view];
   return (
     <div className={cn('flex min-h-0 flex-1 flex-col', className)} data-calendar-body="">
       {View ? (
-        <View />
+        <Suspense fallback={<ViewSkeleton />}>
+          <View />
+        </Suspense>
       ) : (
         <div role="status" className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
-          {VIEW_LABELS[view]} view is not available yet.
+          {messages.viewUnavailable(messages.views[view])}
         </div>
       )}
     </div>

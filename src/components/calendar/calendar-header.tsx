@@ -5,17 +5,11 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useCalendar } from './calendar-context';
+import { enMessages } from './messages';
 import type { CalendarView } from './types';
 
-export const VIEW_LABELS: Record<CalendarView, string> = {
-  day: 'Day',
-  week: 'Week',
-  'work-week': 'Work week',
-  month: 'Month',
-  year: 'Year',
-  agenda: 'Agenda',
-  timeline: 'Timeline',
-};
+/** @deprecated use `messages.views` (kept for backwards compatibility). */
+export const VIEW_LABELS: Record<CalendarView, string> = enMessages.views;
 
 export interface CalendarHeaderProps {
   className?: string;
@@ -25,20 +19,21 @@ export interface CalendarHeaderProps {
 
 export function CalendarHeader({ className, actions }: CalendarHeaderProps) {
   const { title, navigate, view, views, setView } = useCalendar();
-  const { isNarrow, agendaDays } = useCalendar();
+  const { isNarrow, agendaDays, messages, direction } = useCalendar();
+  const u = messages.units;
   const unit =
-    view === 'month' ? 'month' : view === 'year' ? 'year' : view === 'agenda' ? `${agendaDays} days` : view === 'day' || isNarrow ? 'day' : 'week';
+    view === 'month' ? u.month : view === 'year' ? u.year : view === 'agenda' ? u.days(agendaDays) : view === 'day' || isNarrow ? u.day : u.week;
 
   return (
     <header className={cn('flex flex-wrap items-center gap-2 border-b p-3', className)}>
-      <div className="flex items-center gap-1" role="group" aria-label="Date navigation">
+      <div className="flex items-center gap-1" role="group" aria-label={messages.dateNavigation}>
         <Button variant="outline" size="sm" onClick={() => navigate('today')}>
-          Today
+          {messages.today}
         </Button>
-        <Button variant="ghost" size="icon-sm" aria-label={`Previous ${unit}`} onClick={() => navigate('prev')}>
+        <Button variant="ghost" size="icon-sm" aria-label={messages.previous(unit)} onClick={() => navigate('prev')}>
           <ChevronLeft className="rtl:rotate-180" />
         </Button>
-        <Button variant="ghost" size="icon-sm" aria-label={`Next ${unit}`} onClick={() => navigate('next')}>
+        <Button variant="ghost" size="icon-sm" aria-label={messages.next(unit)} onClick={() => navigate('next')}>
           <ChevronRight className="rtl:rotate-180" />
         </Button>
       </div>
@@ -52,15 +47,15 @@ export function CalendarHeader({ className, actions }: CalendarHeaderProps) {
       {views.length > 1 && (
         <>
           {/* >= md: segmented tabs */}
-          <Tabs.Root value={view} onValueChange={(v) => setView(v as CalendarView)} className="hidden md:block">
-            <Tabs.List aria-label="Calendar view" className="relative flex rounded-lg bg-muted p-1">
+          <Tabs.Root key={direction} value={view} onValueChange={(v) => setView(v as CalendarView)} className="hidden md:block">
+            <Tabs.List aria-label={messages.calendarView} className="relative flex rounded-lg bg-muted p-1">
               {views.map((v) => (
                 <Tabs.Tab
                   key={v}
                   value={v}
                   className="relative z-10 h-7 rounded-md px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[active]:text-foreground"
                 >
-                  {VIEW_LABELS[v]}
+                  {messages.views[v]}
                 </Tabs.Tab>
               ))}
               <Tabs.Indicator className="absolute left-[var(--active-tab-left)] top-1 z-0 h-7 w-[var(--active-tab-width)] rounded-md bg-background shadow-sm transition-[left,width] duration-200" />
@@ -71,10 +66,10 @@ export function CalendarHeader({ className, actions }: CalendarHeaderProps) {
           <Select.Root
             value={view}
             onValueChange={(v) => v && setView(v as CalendarView)}
-            items={views.map((v) => ({ value: v, label: VIEW_LABELS[v] }))}
+            items={views.map((v) => ({ value: v, label: messages.views[v] }))}
           >
             <Select.Trigger
-              aria-label="Calendar view"
+              aria-label={messages.calendarView}
               className="flex h-8 items-center gap-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 md:hidden"
             >
               <Select.Value />
@@ -94,7 +89,7 @@ export function CalendarHeader({ className, actions }: CalendarHeaderProps) {
                       <Select.ItemIndicator className="w-4">
                         <Check className="size-4" />
                       </Select.ItemIndicator>
-                      <Select.ItemText>{VIEW_LABELS[v]}</Select.ItemText>
+                      <Select.ItemText>{messages.views[v]}</Select.ItemText>
                     </Select.Item>
                   ))}
                 </Select.Popup>

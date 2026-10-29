@@ -1,0 +1,210 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "advanced-calendar",
+  "homepage": "https://github.com/bruno-bertasso/advanced-calendar",
+  "items": [
+    {
+      "name": "advanced-calendar",
+      "type": "registry:block",
+      "title": "Advanced Calendar",
+      "description": "Compound calendar (day/week/month/year/agenda/timeline) with drag & drop, RFC 5545 recurrence, time zones, i18n and WAI-ARIA grids. Built on Base UI.",
+      "dependencies": [
+        "@base-ui/react",
+        "@date-fns/tz",
+        "@dnd-kit/core",
+        "@tanstack/react-virtual",
+        "class-variance-authority",
+        "clsx",
+        "date-fns",
+        "lucide-react",
+        "nuqs",
+        "rrule",
+        "tailwind-merge"
+      ],
+      "files": [
+        {
+          "path": "src/components/calendar/calendar-body.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/calendar-body.tsx"
+        },
+        {
+          "path": "src/components/calendar/calendar-context-menu.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/calendar-context-menu.tsx"
+        },
+        {
+          "path": "src/components/calendar/calendar-context.ts",
+          "type": "registry:component",
+          "target": "components/calendar/calendar-context.ts"
+        },
+        {
+          "path": "src/components/calendar/calendar-header.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/calendar-header.tsx"
+        },
+        {
+          "path": "src/components/calendar/calendar.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/calendar.tsx"
+        },
+        {
+          "path": "src/components/calendar/event-card.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/event-card.tsx"
+        },
+        {
+          "path": "src/components/calendar/event-details-popover.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/event-details-popover.tsx"
+        },
+        {
+          "path": "src/components/calendar/event-editor-dialog.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/event-editor-dialog.tsx"
+        },
+        {
+          "path": "src/components/calendar/hooks/use-calendar-query-state.ts",
+          "type": "registry:hook",
+          "target": "components/calendar/hooks/use-calendar-query-state.ts"
+        },
+        {
+          "path": "src/components/calendar/hooks/use-media-query.ts",
+          "type": "registry:hook",
+          "target": "components/calendar/hooks/use-media-query.ts"
+        },
+        {
+          "path": "src/components/calendar/hooks/use-now.ts",
+          "type": "registry:hook",
+          "target": "components/calendar/hooks/use-now.ts"
+        },
+        {
+          "path": "src/components/calendar/hooks/use-stable-callback.ts",
+          "type": "registry:hook",
+          "target": "components/calendar/hooks/use-stable-callback.ts"
+        },
+        {
+          "path": "src/components/calendar/index.ts",
+          "type": "registry:component",
+          "target": "components/calendar/index.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/availability.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/availability.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/dates.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/dates.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/dnd.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/dnd.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/layout.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/layout.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/optimistic.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/optimistic.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/recurrence-edit.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/recurrence-edit.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/recurrence.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/recurrence.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/repeat.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/repeat.ts"
+        },
+        {
+          "path": "src/components/calendar/lib/segments.ts",
+          "type": "registry:lib",
+          "target": "components/calendar/lib/segments.ts"
+        },
+        {
+          "path": "src/components/calendar/live-region.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/live-region.tsx"
+        },
+        {
+          "path": "src/components/calendar/messages.ts",
+          "type": "registry:component",
+          "target": "components/calendar/messages.ts"
+        },
+        {
+          "path": "src/components/calendar/recurrence-scope-dialog.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/recurrence-scope-dialog.tsx"
+        },
+        {
+          "path": "src/components/calendar/types.ts",
+          "type": "registry:component",
+          "target": "components/calendar/types.ts"
+        },
+        {
+          "path": "src/components/calendar/views/agenda-view.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/views/agenda-view.tsx"
+        },
+        {
+          "path": "src/components/calendar/views/month-view.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/views/month-view.tsx"
+        },
+        {
+          "path": "src/components/calendar/views/timeline-view.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/views/timeline-view.tsx"
+        },
+        {
+          "path": "src/components/calendar/views/week-view.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/views/week-view.tsx"
+        },
+        {
+          "path": "src/components/calendar/views/year-view.tsx",
+          "type": "registry:component",
+          "target": "components/calendar/views/year-view.tsx"
+        },
+        {
+          "path": "src/components/ui/button.tsx",
+          "type": "registry:ui",
+          "target": "components/ui/button.tsx"
+        },
+        {
+          "path": "src/components/ui/scroll-area.tsx",
+          "type": "registry:ui",
+          "target": "components/ui/scroll-area.tsx"
+        }
+      ],
+      "cssVars": {
+        "light": {
+          "calendar-today": "oklch(0.55 0.2 260)",
+          "calendar-now": "oklch(0.63 0.24 25)",
+          "calendar-event": "oklch(0.55 0.2 260)"
+        },
+        "dark": {
+          "calendar-today": "oklch(0.7 0.16 260)",
+          "calendar-now": "oklch(0.7 0.2 25)",
+          "calendar-event": "oklch(0.65 0.17 260)"
+        },
+        "theme": {
+          "color-calendar-today": "var(--calendar-today)",
+          "color-calendar-now": "var(--calendar-now)",
+          "color-calendar-event": "var(--calendar-event)"
+        }
+      }
+    }
+  ]
+}

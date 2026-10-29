@@ -135,7 +135,7 @@ export function YearView({ className }: YearViewProps) {
                           aria-selected={isCursor}
                           aria-current={isToday ? 'date' : undefined}
                           aria-label={`${formatDayLabel(day, timeZone, locale)}${
-                            count ? `, ${count} ${count === 1 ? 'event' : 'events'}` : ''
+                            count ? `, ${cal.messages.eventCount(count)}` : ''
                           }`}
                           data-date={key}
                           data-year-day=""

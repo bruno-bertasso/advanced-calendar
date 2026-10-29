@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:lib": "vite build -c vite.lib.config.ts && tsc -p tsconfig.lib.json"
   },
   "keywords": [],
   "author": "",
@@ -38,10 +39,28 @@
     "date-fns": "^4.4.0",
     "lucide-react": "^1.63.0",
     "nuqs": "^2.10.2",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "rrule": "^2.8.1",
     "tailwind-merge": "^3.7.0"
   },
-  "type": "module"
+  "type": "module",
+  "module": "./dist-lib/index.js",
+  "types": "./dist-lib/types/components/calendar/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist-lib/types/components/calendar/index.d.ts",
+      "import": "./dist-lib/index.js"
+    },
+    "./styles.css": "./src/index.css"
+  },
+  "files": [
+    "dist-lib",
+    "src/index.css"
+  ],
+  "sideEffects": "[\"*.css\"]",
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
 }

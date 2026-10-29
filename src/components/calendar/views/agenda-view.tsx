@@ -47,7 +47,7 @@ export interface AgendaViewProps {
 /** Chronological list for the next `agendaDays`, virtualised with @tanstack/react-virtual. */
 export function AgendaView({ className }: AgendaViewProps) {
   const cal = useCalendar();
-  const { occurrences, range, timeZone, locale, today, title } = cal;
+  const { occurrences, range, timeZone, locale, today, title, messages } = cal;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const rows = useMemo(() => buildAgendaRows(occurrences, range.days), [occurrences, range.days]);
@@ -82,15 +82,17 @@ export function AgendaView({ className }: AgendaViewProps) {
   if (!rows.length) {
     return (
       <div role="status" className={cn('flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground', className)}>
-        No events between {formatDayLabel(range.days[0]!, timeZone, locale)} and{' '}
-        {formatDayLabel(range.days[range.days.length - 1]!, timeZone, locale)}.
+        {messages.noEventsBetween(
+          formatDayLabel(range.days[0]!, timeZone, locale),
+          formatDayLabel(range.days[range.days.length - 1]!, timeZone, locale),
+        )}
       </div>
     );
   }
 
   return (
     <div ref={scrollRef} className={cn('@container min-h-0 flex-1 overflow-y-auto', className)} onKeyDown={onKeyDown}>
-      <div role="list" aria-label={`Agenda, ${title}`} className="relative" style={{ height: virtualizer.getTotalSize() }}>
+      <div role="list" aria-label={messages.agenda(title)} className="relative" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((item) => {
           const row = rows[item.index]!;
           const common = {
@@ -112,9 +114,9 @@ export function AgendaView({ className }: AgendaViewProps) {
                   )}
                 >
                   {formatDayLabel(row.day, timeZone, locale)}
-                  {isToday && <span className="text-xs font-medium">· Today</span>}
+                  {isToday && <span className="text-xs font-medium">· {messages.today}</span>}
                   <span className="ms-auto text-xs font-normal text-muted-foreground">
-                    {row.count} {row.count === 1 ? 'event' : 'events'}
+                    {messages.eventCount(row.count)}
                   </span>
                 </h3>
               </div>
@@ -126,7 +128,7 @@ export function AgendaView({ className }: AgendaViewProps) {
             <div key={row.key} {...common}>
               <div className="flex h-full items-center gap-3 px-4 py-1">
                 <span className="w-20 shrink-0 text-xs @min-[40rem]:w-36 tabular-nums text-muted-foreground">
-                  {allDay ? 'All day' : formatTimeRange(o.start, o.end, timeZone, locale)}
+                  {allDay ? messages.allDay : formatTimeRange(o.start, o.end, timeZone, locale)}
                 </span>
                 <EventCard
                   occurrence={o}

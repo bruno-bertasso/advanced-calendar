@@ -1,10 +1,13 @@
 import type { TZDate } from '@date-fns/tz';
 import { useDroppable } from '@dnd-kit/core';
 import { addDays, addMinutes, addWeeks } from 'date-fns';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { useCalendar } from '../calendar-context';
+import { useCalendar, useCalendarConfig, useOccurrencesWithPreview } from '../calendar-context';
+import { useNow } from '../hooks/use-now';
+import { blockSegmentsForDay, hatchStyle, isBusinessTime, type BlockSegment } from '../lib/availability';
+import type { TimedPlacement } from '../lib/layout';
 import { slotDataAttributes } from '../calendar-context-menu';
 import { EventCard } from '../event-card';
 import type { DropData } from '../lib/dnd';
@@ -37,9 +40,10 @@ export interface WeekViewProps {
 export function WeekView({ className }: WeekViewProps) {
   const cal = useCalendar();
   const {
-    range, cursor, timeZone, locale, occurrences, slotDuration, pxPerMinute, dayStartHour, dayEndHour,
-    scrollToHour, visibleResources, isNarrow, today, view,
+    range, cursor, timeZone, locale, slotDuration, pxPerMinute, dayStartHour, dayEndHour,
+    scrollToHour, visibleResources, isNarrow, today, view, messages, businessHours, blockedRanges,
   } = cal;
+  const occurrences = useOccurrencesWithPreview(cal.occurrences);
 
   const days = useMemo(() => (isNarrow ? [cursor] : range.days), [isNarrow, cursor, range.days]);
   const resources = visibleResources;
@@ -97,6 +101,65 @@ export function WeekView({ className }: WeekViewProps) {
     }
     return map;
   }, [columns, occurrences, timeZone, visStart, visEnd, slotDuration]);
+
+  const blocksByCell = useMemo(() => {
+    const map = new Map<string, BlockSegment[]>();
+    if (!blockedRanges.length) return map;
+    for (const col of columns) {
+      for (const seg of blockSegmentsForDay(blockedRanges, col.day, timeZone, col.resource?.id)) {
+        if (seg.endMinute <= visStart || seg.startMinute >= visEnd) continue;
+        const slotIndex = Math.floor((Math.max(seg.startMinute, visStart) - visStart) / slotDuration);
+        const key = `${col.index}:${slotIndex}`;
+        map.set(key, [...(map.get(key) ?? []), seg]);
+      }
+    }
+    return map;
+  }, [blockedRanges, columns, timeZone, visStart, visEnd, slotDuration]);
+
+  // ---- Drag to create ---------------------------------------------------------------------
+  const [selection, setSelection] = useState<{ col: number; anchor: number; current: number } | null>(null);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || e.pointerType === 'touch' || !cal.onSlotSelect) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-calendar-event],[data-calendar-ghost],button')) return;
+    const cell = target.closest<HTMLElement>('[data-slot]');
+    if (!cell) return;
+    const [col, minute] = cell.dataset.slot!.split(':').map(Number) as [number, number];
+    setSelection({ col, anchor: minute, current: minute });
+
+    const onMove = (ev: globalThis.PointerEvent) => {
+      const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('[data-slot]');
+      if (!over) return;
+      const [c, m] = over.dataset.slot!.split(':').map(Number) as [number, number];
+      if (c !== col) return;
+      setSelection((s) => (s && s.current !== m ? { ...s, current: m } : s));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      const sel = selectionRef.current;
+      setSelection(null);
+      // A plain click (no movement) does nothing; double-click / Enter handle single slots.
+      if (!sel || sel.anchor === sel.current) return;
+      const column = columns[sel.col];
+      if (!column) return;
+      const from = Math.min(sel.anchor, sel.current);
+      const to = Math.max(sel.anchor, sel.current) + slotDuration;
+      cal.onSlotSelect?.({
+        start: new Date(addMinutes(column.day, from).getTime()),
+        end: new Date(addMinutes(column.day, to).getTime()),
+        allDay: false,
+        ...(column.resource ? { resourceId: column.resource.id } : {}),
+      });
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+  const selFrom = selection ? Math.min(selection.anchor, selection.current) : -1;
+  const selTo = selection ? Math.max(selection.anchor, selection.current) : -1;
 
   // ---- Roving focus ----------------------------------------------------------------------
   const [focusMinute, setFocusMinute] = useState(() => Math.min(Math.max(scrollToHour * 60, visStart), visEnd - slotDuration));
@@ -188,6 +251,7 @@ export function WeekView({ className }: WeekViewProps) {
           aria-colcount={columns.length + 1}
           aria-readonly={cal.onSlotSelect ? undefined : true}
           onKeyDown={onKeyDown}
+          onPointerDown={onPointerDown}
           data-calendar-drag-surface="time-grid"
           className="grid"
           style={{
@@ -198,7 +262,7 @@ export function WeekView({ className }: WeekViewProps) {
           <div role="rowgroup" className="sticky top-0 z-20 col-span-full grid grid-cols-subgrid border-b bg-card">
             <div role="row" className="col-span-full grid grid-cols-subgrid" aria-rowindex={1}>
               <div role="columnheader" className="border-e" aria-colindex={1}>
-                <span className="sr-only">Time</span>
+                <span className="sr-only">{messages.time}</span>
               </div>
               {days.map((day, di) => (
                 <DayHeader key={day.getTime()} day={day} span={R} colIndex={di * R + 2} isToday={isSameDay(day, today)} />
@@ -208,7 +272,7 @@ export function WeekView({ className }: WeekViewProps) {
             {resources.length > 0 && (
               <div role="row" className="col-span-full grid grid-cols-subgrid border-t" aria-rowindex={2}>
                 <div role="columnheader" className="border-e" aria-colindex={1}>
-                  <span className="sr-only">Resource</span>
+                  <span className="sr-only">{messages.resource}</span>
                 </div>
                 {columns.map((col) => (
                   <div
@@ -227,7 +291,7 @@ export function WeekView({ className }: WeekViewProps) {
 
             <div role="row" className="col-span-full grid grid-cols-subgrid border-t" aria-rowindex={resources.length ? 3 : 2}>
               <div role="rowheader" aria-colindex={1} className="border-e px-1 py-1 text-right text-[0.65rem] text-muted-foreground">
-                All day
+                {messages.allDay}
               </div>
               {columns.map((col) => (
                 <AllDayCell
@@ -266,8 +330,17 @@ export function WeekView({ className }: WeekViewProps) {
                   isFocusTarget={col.index === focusCol && minute === focusMinute}
                   eventsTabbable={col.index === focusCol}
                   segments={timedByCell.get(`${col.index}:${si}`)}
+                  blocks={blocksByCell.get(`${col.index}:${si}`)}
+                  isToday={isSameDay(col.day, today)}
+                  selecting={selection?.col === col.index && minute >= selFrom && minute <= selTo}
+                  offHours={!isBusinessTime(businessHours, col.day, minute, slotDuration)}
                   showNow={isSameDay(col.day, today) && nowMinute >= minute && nowMinute < minute + slotDuration}
-                  nowOffset={(nowMinute - minute) * pxPerMinute}
+                  nowOffset={
+                    isSameDay(col.day, today) && nowMinute >= minute && nowMinute < minute + slotDuration
+                      ? (nowMinute - minute) * pxPerMinute
+                      : 0
+                  }
+                  showNowDot={col.index % Math.max(1, resources.length) === 0}
                 />
               ))}
             </div>
@@ -285,7 +358,7 @@ function formatHour(minute: number, locale: string | undefined, timeZone: string
 }
 
 function DayHeader({ day, span, colIndex, isToday }: { day: TZDate; span: number; colIndex: number; isToday: boolean }) {
-  const { locale, timeZone, setCursor, setView, views } = useCalendar();
+  const { locale, timeZone, setCursor, setView, views, messages } = useCalendar();
   const weekday = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone }).format(day);
   const dayNum = new Intl.DateTimeFormat(locale, { day: 'numeric', timeZone }).format(day);
   const canDrill = views.includes('day');
@@ -307,7 +380,7 @@ function DayHeader({ day, span, colIndex, isToday }: { day: TZDate; span: number
       role="columnheader"
       aria-colindex={colIndex}
       aria-colspan={span > 1 ? span : undefined}
-      aria-label={`${formatDayLabel(day, timeZone, locale)}${isToday ? ', today' : ''}`}
+      aria-label={`${formatDayLabel(day, timeZone, locale)}${isToday ? messages.todaySuffix : ''}`}
       className="flex min-w-0 items-center justify-center gap-1.5 border-e py-1.5 last:border-e-0"
       style={{ gridColumn: `span ${span}` }}
     >
@@ -397,21 +470,36 @@ interface SlotCellProps {
   isFocusTarget: boolean;
   eventsTabbable: boolean;
   segments: TimedSegment[] | undefined;
+  blocks: BlockSegment[] | undefined;
+  isToday: boolean;
+  /** Part of an in-progress drag-to-create selection. */
+  selecting: boolean;
+  offHours: boolean;
   showNow: boolean;
   nowOffset: number;
+  showNowDot: boolean;
 }
 
+/**
+ * One time slot. Memoised and subscribed to the (rarely changing) config context only, so
+ * navigation, selection and optimistic updates re-render just the cells whose props change.
+ */
 const SlotCell = memo(function SlotCell({
   column,
   minute,
   isFocusTarget,
   eventsTabbable,
   segments,
+  blocks,
+  isToday,
+  selecting,
+  offHours,
   showNow,
   nowOffset,
+  showNowDot,
 }: SlotCellProps) {
-  const cal = useCalendar();
-  const { pxPerMinute, slotDuration, dayStartHour, locale, timeZone, view } = cal;
+  const cfg = useCalendarConfig();
+  const { pxPerMinute, slotDuration, dayStartHour, dayEndHour, locale, timeZone, messages } = cfg;
   const dropData: DropData = {
     surface: 'time-grid',
     day: column.day.getTime(),
@@ -420,25 +508,25 @@ const SlotCell = memo(function SlotCell({
   const { setNodeRef, isOver } = useDroppable({ id: `slot:${column.key}:${minute}`, data: dropData });
   const start = addMinutes(column.day, minute);
   const visStart = dayStartHour * 60;
+  const visEnd = dayEndHour * 60;
 
   const label = `${formatDayLabel(column.day, timeZone, locale)}, ${new Intl.DateTimeFormat(locale, {
     hour: 'numeric',
     minute: '2-digit',
     timeZone,
-  }).format(start)}${column.resource ? `, ${column.resource.title}` : ''}`;
+  }).format(start)}${column.resource ? `, ${column.resource.title}` : ''}${blocks?.length ? `, ${messages.unavailable}` : ''}`;
 
-  const defaultContent = null;
-  const cellCtx: CellRenderContext | null = cal.renderCell
+  const cellCtx: CellRenderContext | null = cfg.renderCell
     ? {
         date: start,
-        view,
-        isToday: isSameDay(column.day, cal.today),
+        view: 'week',
+        isToday,
         isOutsideRange: false,
         isWeekend: isWeekend(column.day),
         isSelected: isFocusTarget,
         events: segments?.map((s) => s.occurrence) ?? [],
         ...(column.resource ? { resource: column.resource } : {}),
-        defaultContent,
+        defaultContent: null,
       }
     : null;
 
@@ -461,8 +549,10 @@ const SlotCell = memo(function SlotCell({
       data-hour-start={minute % 60 === 0 ? '' : undefined}
       data-over={isOver ? '' : undefined}
       data-weekend={isWeekend(column.day) ? '' : undefined}
+      data-off-hours={offHours ? '' : undefined}
+      data-selecting={selecting ? '' : undefined}
       onDoubleClick={() =>
-        cal.onSlotSelect?.({
+        cfg.onSlotSelect?.({
           start: new Date(start.getTime()),
           end: new Date(addMinutes(start, slotDuration).getTime()),
           allDay: false,
@@ -472,16 +562,30 @@ const SlotCell = memo(function SlotCell({
       className={cn(
         'relative min-w-0 border-e last:border-e-0 outline-none',
         'data-[hour-start]:border-t data-[hour-start]:border-t-border',
-        'data-[weekend]:bg-muted/30 data-[over]:bg-accent',
+        'data-[weekend]:bg-muted/30 data-[off-hours]:bg-muted/60 data-[over]:bg-accent',
+        'data-[selecting]:bg-calendar-event/20',
         'focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50',
       )}
     >
-      {cellCtx && cal.renderCell?.(cellCtx)}
+      {cellCtx && cfg.renderCell?.(cellCtx)}
+      {blocks?.map((b) => {
+        const s0 = Math.max(b.startMinute, visStart);
+        return (
+          <div
+            key={b.key}
+            aria-hidden
+            data-calendar-blocked=""
+            className="pointer-events-none absolute inset-x-0 z-0 overflow-hidden px-1 text-[0.65rem] text-muted-foreground"
+            style={{ top: (s0 - minute) * pxPerMinute, height: (Math.min(b.endMinute, visEnd) - s0) * pxPerMinute, ...hatchStyle }}
+          >
+            {b.block.label}
+          </div>
+        );
+      })}
       {segments?.map((seg) => {
         const clampedStart = Math.max(seg.startMinute, visStart);
         const top = (clampedStart - minute) * pxPerMinute;
-        const height = Math.max((Math.min(seg.endMinute, cal.dayEndHour * 60) - clampedStart) * pxPerMinute, 20);
-        const { column: c, columns, span } = seg.placement;
+        const height = Math.max((Math.min(seg.endMinute, visEnd) - clampedStart) * pxPerMinute, 20);
         return (
           <EventCard
             key={seg.key}
@@ -494,37 +598,46 @@ const SlotCell = memo(function SlotCell({
             isEnd={seg.isEnd}
             resizable
             tabbable={eventsTabbable}
-            className="absolute z-10"
-            style={{
-              top,
-              height,
-              insetInlineStart: `calc(${(c / columns) * 100}% + 1px)`,
-              width: `calc(${(span / columns) * 100}% - 3px)`,
-            }}
+            className={cn('absolute', seg.placement.columns >= 3 && 'ring-1 ring-card')}
+            style={{ top, height, ...overlapStyle(seg.placement) }}
           />
         );
       })}
       {showNow && (
         <div aria-hidden className="pointer-events-none absolute inset-x-0 z-20 h-0.5 bg-calendar-now" style={{ top: nowOffset }}>
-          {column.resource === undefined || column.index % Math.max(1, cal.visibleResources.length) === 0 ? (
-            <span className="absolute -start-1 -top-1 size-2.5 rounded-full bg-calendar-now" />
-          ) : null}
+          {showNowDot && <span className="absolute -start-1 -top-1 size-2.5 rounded-full bg-calendar-now" />}
         </div>
       )}
     </div>
   );
 });
 
+/**
+ * Horizontal placement for overlapping events. Up to two columns split the width; with
+ * three or more, events cascade (each wider than its share, overlapping the next) so titles
+ * stay readable instead of shrinking to slivers.
+ */
+export function overlapStyle({ column, columns, span }: TimedPlacement): CSSProperties {
+  const share = 100 / columns;
+  const start = column * share;
+  if (columns < 3) {
+    return { insetInlineStart: `calc(${start}% + 1px)`, width: `calc(${span * share}% - 3px)`, zIndex: 10 };
+  }
+  const isLast = column + span >= columns;
+  const width = isLast ? 100 - start : Math.min(100 - start, span * share * 1.7);
+  return { insetInlineStart: `calc(${start}% + 1px)`, width: `calc(${width}% - 3px)`, zIndex: 10 + column };
+}
+
 /** 7-day picker shown above the collapsed (single-day) time grid on narrow screens. */
 function DayStrip() {
-  const { cursor, setCursor, weekStartsOn, locale, timeZone, today } = useCalendar();
+  const { cursor, setCursor, weekStartsOn, locale, timeZone, today, messages } = useCalendar();
   const start = useMemo(() => {
     const d = cursor.getDay();
     return addDays(cursor, -((d - weekStartsOn + 7) % 7));
   }, [cursor, weekStartsOn]);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   return (
-    <div role="group" aria-label="Choose day" className="grid grid-cols-7 gap-1 border-b p-2">
+    <div role="group" aria-label={messages.chooseDay} className="grid grid-cols-7 gap-1 border-b p-2">
       {days.map((d) => {
         const selected = isSameDay(d, cursor);
         return (
@@ -547,13 +660,4 @@ function DayStrip() {
       })}
     </div>
   );
-}
-
-function useNow(intervalMs = 60_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
 }
